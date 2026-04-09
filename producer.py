@@ -15,8 +15,7 @@ def fetch_train_data():
     try:
         r = requests.get(API_URL, timeout=10)
         return r.json()
-    except Exception as e:
-        print(f"[ERROR] API fetch failed: {e}")
+    except:
         return None
 
 
