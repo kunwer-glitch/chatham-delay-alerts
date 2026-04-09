@@ -1,104 +1,88 @@
 import json
-from datetime import datetime
 from confluent_kafka import Consumer
 import requests
+import time
 
-# Kafka config
-conf = {
-    'bootstrap.servers': 'pkc-z3p1v0.europe-west2.gcp.confluent.cloud:9092',
-    'security.protocol': 'SASL_SSL',
-    'sasl.mechanisms': 'PLAIN',
-    'sasl.username': 'OIVMCKPNCWGI272N',
-    'sasl.password': 'cfltBOCyjjHIvfg8dphmdi/tKcdsYlnwkjMuPU9kCIq94YQ70B15jUEIDscJUdNA',
-    'group.id': 'SC-91b9d82d-fdbb-4766-962f-248ba0bfdf92',
-    'auto.offset.reset': 'latest',
-}
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"
 
-TOPIC = 'prod-1010-Darwin-Train-Information-Push-Port-IIII2_0-JSON'
+KAFKA_BOOTSTRAP = "YOUR_KAFKA_BROKER"
+KAFKA_TOPIC = "train_updates"
+KAFKA_GROUP = "train_alert_group"
 
-# Route definitions
-LONDON_STATIONS = {"VIC", "BFR", "CST", "CHX", "LBG", "STP"}
-CHATHAM = "CHM"
-DELAY_THRESHOLD = 15  # minutes
+# CRS codes
+STP = "STP"   # St Pancras
+VIC = "VIC"   # Victoria
+CST = "CST"   # Cannon Street
+CTM = "CTM"   # Chatham
 
-# Telegram config
-BOT_TOKEN = "8317324668:AAF3g5n2iw937ZAW38hF-ZCqHQ7xuAVurMM"
-CHAT_ID = "8129283137"
+MONITORED_ORIGINS = {STP, VIC, CST, CTM}
+MONITORED_DESTINATIONS = {STP, VIC, CST, CTM}
 
-def send_telegram(message: str):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        requests.post(url, data=data, timeout=5)
-    except Exception as e:
-        print(f"Telegram send failed: {e}")
+DELAY_THRESHOLD_MINUTES = 1  # test mode
 
-def parse_time(t):
-    if not t:
-        return None
-    return datetime.fromisoformat(t.replace("Z", "+00:00"))
 
-def is_london_chatham_route(origin, destination):
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+    requests.post(url, json=payload, timeout=10)
+
+
+def is_monitored_route(origin, destination):
     return (
-        (origin in LONDON_STATIONS and destination == CHATHAM) or
-        (origin == CHATHAM and destination in LONDON_STATIONS)
+        origin in MONITORED_ORIGINS and
+        destination in MONITORED_DESTINATIONS and
+        origin != destination
     )
 
-consumer = Consumer(conf)
-consumer.subscribe([TOPIC])
 
-print("Listening for London ↔ Chatham delay alerts...")
+def should_alert(delay):
+    return delay >= DELAY_THRESHOLD_MINUTES
 
-# --- TEST TELEGRAM ALERT ---
-send_telegram("🚨 *Test alert* 🚨\nThis is a simulated delay notification.")
-print("Test alert sent.")
 
-while True:
-    msg = consumer.poll(1.0)
-    if msg is None:
-        continue
-    if msg.error():
-        print("Error:", msg.error())
-        continue
+def main():
+    consumer = Consumer({
+        "bootstrap.servers": KAFKA_BOOTSTRAP,
+        "group.id": KAFKA_GROUP,
+        "auto.offset.reset": "latest"
+    })
 
-    data = json.loads(msg.value().decode('utf-8'))
+    consumer.subscribe([KAFKA_TOPIC])
 
-    # Only process Train Status messages
-    if data.get("eventType") != "TS":
-        continue
+    print("Monitoring STP/VIC/CST ↔ CTM delay alerts...")
 
-    origin = data.get("origin")
-    destination = data.get("destination")
+    send_telegram_message("Consumer started successfully.")
 
-    if not origin or not destination:
-        continue
+    while True:
+        msg = consumer.poll(1.0)
+        if msg is None:
+            continue
 
-    # Filter for London ↔ Chatham
-    if not is_london_chatham_route(origin, destination):
-        continue
+        try:
+            data = json.loads(msg.value())
+        except:
+            continue
 
-    print(f"Matched train on route {origin} → {destination}")
+        origin = data.get("origin_crs")
+        destination = data.get("destination_crs")
+        delay = data.get("delay_minutes", 0)
 
-    scheduled = parse_time(data.get("scheduled"))
-    actual = parse_time(data.get("actual"))
+        print(f"[DEBUG] {origin} → {destination}, Delay: {delay}")
 
-    if not scheduled or not actual:
-        continue
+        if not is_monitored_route(origin, destination):
+            continue
 
-    delay = (actual - scheduled).total_seconds() / 60
+        if should_alert(delay):
+            alert = (
+                f"🚆 Delay Alert\n"
+                f"{origin} → {destination}\n"
+                f"Delay: {delay} minutes"
+            )
+            send_telegram_message(alert)
+            print("[INFO] Alert sent to Telegram")
 
-    if delay >= DELAY_THRESHOLD:
-        alert_text = (
-            f"🚨 *Delay alert* 🚨\n"
-            f"Train {data.get('trainId')} {origin} → {destination}\n"
-            f"Delay: {delay:.1f} minutes"
-        )
+        time.sleep(0.1)
 
-        print("\n" + alert_text)
-        print("-" * 60)
 
-        send_telegram(alert_text)
+if __name__ == "__main__":
+    main()
