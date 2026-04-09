@@ -9,7 +9,7 @@ from confluent_kafka import Producer, Consumer
 # ---------------------------------------------------
 
 TELEGRAM_BOT_TOKEN = "8317324668:AAF3g5n2iw937ZAW38hF-ZCqHQ7xuAVurMM"
-TELEGRAM_CHAT_ID = "PUT_YOUR_REAL_CHAT_ID_HERE"
+TELEGRAM_CHAT_ID = "433738448"
 
 # If you do NOT have Kafka yet, temporarily use localhost
 # This prevents crashes and allows Telegram test to fire
