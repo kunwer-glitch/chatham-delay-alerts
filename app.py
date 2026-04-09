@@ -8,7 +8,7 @@ from confluent_kafka import Producer, Consumer
 # 🔧 CONFIG — FILL THESE IN WITH YOUR REAL VALUES
 # ---------------------------------------------------
 
-TELEGRAM_BOT_TOKEN = "PUT_YOUR_REAL_BOT_TOKEN_HERE"
+TELEGRAM_BOT_TOKEN = "8317324668:AAF3g5n2iw937ZAW38hF-ZCqHQ7xuAVurMM"
 TELEGRAM_CHAT_ID = "PUT_YOUR_REAL_CHAT_ID_HERE"
 
 # If you do NOT have Kafka yet, temporarily use localhost
